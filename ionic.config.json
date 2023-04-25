@@ -1,7 +1,10 @@
 {
   "name": "photo-gallery-capacitor-react",
   "integrations": {
-    "capacitor": {}
+    "capacitor": {},
+    "dotenv": {
+      "include": [".env"]
+    }
   },
   "type": "react"
 }
