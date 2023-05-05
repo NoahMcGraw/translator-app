@@ -13,7 +13,7 @@ const useTranslator = () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     const recorder = new RecordRTC(stream, {
       type: 'audio',
-      mimeType: 'audio/webm',
+      mimeType: 'audio/webm;codecs=pcm',
       sampleRate: 16000,
       numberOfAudioChannels: 1,
     })
