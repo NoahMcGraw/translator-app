@@ -15,7 +15,7 @@ export class TranslatorService {
     }
     const audioBlob = args.audio
     const requestData = new FormData()
-    requestData.append('file', audioBlob, 'audio.webm')
+    requestData.append('file', audioBlob, 'audio.wav')
     requestData.append('model', 'whisper-1')
 
     const config = {

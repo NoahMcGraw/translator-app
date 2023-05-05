@@ -1,7 +1,6 @@
 import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
-// import axios from 'axios'
 import { SpeechClient } from '@google-cloud/speech'
 import dotenv from 'dotenv'
 
@@ -19,7 +18,7 @@ app.post('/getTranslations', upload.single('file'), async (req, res) => {
   // Extract the model property from the body of the request.
   const model = req.body.model
   // Extract the audio buffer from the request so it can be passed to the next api.
-  const audioBuffer = new Blob([req.file.buffer], { type: 'audio/webm' })
+  const audioBuffer = new Blob([req.file.buffer], { type: 'audio/wav' })
 
   // Check if the required fields are present in the request body
   if (!audioBuffer || !model) {
@@ -29,14 +28,17 @@ app.post('/getTranslations', upload.single('file'), async (req, res) => {
   const client = new SpeechClient()
 
   const config = {
-    encoding: 'LINEAR16',
-    sampleRateHertz: 16000,
+    // encoding: 'WAV_LINEAR16',
+    // sampleRateHertz: 16000,
     languageCode: 'en-US',
+    audioChannelCount: 2,
   }
 
   const audio = {
-    content: audioBuffer.toString('base64'),
+    content: new Uint8Array(await audioBuffer.arrayBuffer()),
   }
+
+  console.log(audio.content)
 
   const request = {
     config: config,
@@ -49,32 +51,6 @@ app.post('/getTranslations', upload.single('file'), async (req, res) => {
   console.log(transcription)
 
   return res.status(200).json({ message: 'Translation complete.', data: transcription })
-
-  // Create and then populate the request FormData object with the data to send to the API.
-  // const requestData = new FormData()
-  // requestData.append('file', audioBuffer, 'audio.webm')
-  // requestData.append('model', model)
-
-  // // Perform translation logic here using the file and model
-  // const config = {
-  //   method: 'post',
-  //   url: 'https://api.openai.com/v1/audio/transcriptions',
-  //   headers: {
-  //     Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-  //     // TODO: Replace with your API key
-  //     Accept: '*/*',
-  //   },
-  //   data: requestData,
-  // }
-
-  // return await axios(config)
-  //   .then(function (extResponse) {
-  //     return res.status(200).json({ message: 'Translation complete.', data: extResponse.data })
-  //   })
-  //   .catch(function (error) {
-  //     console.error(error)
-  //     return res.status(500).json({ message: 'Error during translation.', data: JSON.stringify(error) })
-  //   })
 })
 
 app.listen(3003, () => {
