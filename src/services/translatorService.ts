@@ -22,8 +22,6 @@ export class TranslatorService {
       method: 'post',
       url: 'http://localhost:3003/getTranslations',
       headers: {
-        // Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        // TODO: Replace with your API key
         Accept: '*/*',
       },
       data: requestData,

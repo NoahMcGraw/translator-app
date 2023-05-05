@@ -2,7 +2,12 @@ import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
 import axios from 'axios'
+import dotenv from 'dotenv'
 
+// Load environment variables from .env file
+dotenv.config()
+
+// Create express app
 const app = express()
 app.use(cors())
 
@@ -30,9 +35,8 @@ app.post('/getTranslations', upload.single('file'), async (req, res) => {
     method: 'post',
     url: 'https://api.openai.com/v1/audio/transcriptions',
     headers: {
-      // Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       // TODO: Replace with your API key
-      Authorization: `Bearer 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`,
       Accept: '*/*',
     },
     data: requestData,
