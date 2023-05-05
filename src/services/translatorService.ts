@@ -20,16 +20,14 @@ export class TranslatorService {
 
     const config = {
       method: 'post',
-      url: 'https://api.openai.com/v1/audio/transcriptions',
+      url: 'http://localhost:3003/getTranslations',
       headers: {
         // Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         // TODO: Replace with your API key
-        Authorization: `Bearer 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`,
         Accept: '*/*',
       },
       data: requestData,
     }
-    console.log(config)
 
     return await axios(config)
       .then(function (res) {
