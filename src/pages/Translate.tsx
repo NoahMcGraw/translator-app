@@ -16,11 +16,11 @@ import {
   IonSelectOption,
 } from '@ionic/react'
 import { headset } from 'ionicons/icons'
-import useTranslationRecorder from '../hooks/useTranslator'
+import useTranscriptionRecorder from '../hooks/useTranslator'
 import { Languages, LanguagesList } from '../models/Languages.model'
 
 const Translate: React.FC = () => {
-  const { isRecording, translationTexts, startRecording } = useTranslationRecorder()
+  const { isRecording, transcriptions, startRecording } = useTranscriptionRecorder()
   const [languages, setLanguages] = React.useState<Languages[]>([Languages.English, Languages.Spanish])
 
   return (
@@ -33,14 +33,13 @@ const Translate: React.FC = () => {
       <IonContent>
         <IonGrid>
           <IonRow>
-            {/* Text results of audio translation show here*/}
+            {/* Text results of audio transcription show here*/}
             <IonCol size='12'>
-              {/* translationText */}
-              {translationTexts &&
-                translationTexts.map((translations, i) => (
+              {/* transcriptionText */}
+              {transcriptions &&
+                transcriptions.map((transcription, i) => (
                   <IonText key={i}>
-                    <h1>{translations.language}</h1>
-                    <p>{translations.text}</p>
+                    <h1>{transcription}</h1>
                   </IonText>
                 ))}
             </IonCol>

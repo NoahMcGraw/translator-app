@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import RecordRTC from 'recordrtc'
 import { Languages } from '../models/Languages.model'
-import { Translations } from '../models/Translations.model'
-import TranslatorService from '../services/translatorService'
+import { Transcription } from '../models/Transcription.model'
+import TranscriptionService from '../services/transcriptionService'
 
 const useTranslator = () => {
-  const [translationTexts, setTranslationTexts] = useState<Translations | null>(null)
+  const [transcriptions, setTranscription] = useState<Transcription[] | null>(null)
   const [isRecording, setIsRecording] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -29,21 +29,25 @@ const useTranslator = () => {
         console.log(blob)
 
         try {
-          // const translations = await TranslatorService.getTranslation(formData)
-          const translations = await TranslatorService.getTranscription({ audio: blob })
-          console.log(translations)
-          // setTranslationTexts(translations)
+          const transcriptionService = new TranscriptionService({})
+          const res = await transcriptionService.getTranscription({ audio: blob })
+          console.log(res)
+          // Iterate through the res and create a Transcription object for each
+          //TODO: DO THIS
+          transcriptions?.push(res)
+          setTranscription(transcriptions)
           setError(null)
         } catch (err: any) {
-          setError('Translation error: ' + err.message)
-          setTranslationTexts(null)
-          console.error(error)
+          setError('Transcription error: ' + err.message)
+          setTranscription(null)
+          console.error(err)
+          console.error(err.message)
         }
       })
     }, 5000)
   }
 
-  return { isRecording, translationTexts, startRecording }
+  return { isRecording, transcriptions, startRecording }
 }
 
 export default useTranslator
