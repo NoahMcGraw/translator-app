@@ -20,7 +20,7 @@ import useTranscriptionRecorder from '../hooks/useTranslator'
 import { Languages, LanguagesList } from '../models/Languages.model'
 
 const Translate: React.FC = () => {
-  const { isRecording, transcriptions, startRecording } = useTranscriptionRecorder()
+  const { isRecording, transcriptions, error, startRecording, stopRecording } = useTranscriptionRecorder()
   const [languages, setLanguages] = React.useState<Languages[]>([Languages.English, Languages.Spanish])
 
   return (
@@ -76,10 +76,18 @@ const Translate: React.FC = () => {
         </IonFab>
         {/* Record button */}
         <IonFab vertical='bottom' horizontal='center' slot='fixed'>
-          <IonFabButton onClick={() => startRecording(languages)}>
-            <IonIcon icon={headset}></IonIcon>
-            <IonText>{isRecording ? 'Recording...' : 'Record'}</IonText>
-          </IonFabButton>
+          {!isRecording && (
+            <IonFabButton onClick={() => startRecording(languages)}>
+              <IonIcon icon={headset}></IonIcon>
+              <IonText>{isRecording ? 'Recording...' : 'Record'}</IonText>
+            </IonFabButton>
+          )}
+          {isRecording && (
+            <IonFabButton onClick={() => stopRecording()}>
+              <IonIcon icon={headset}></IonIcon>
+              <IonText>Stop Recording</IonText>
+            </IonFabButton>
+          )}
         </IonFab>
       </IonContent>
     </IonPage>

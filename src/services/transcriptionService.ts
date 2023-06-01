@@ -54,7 +54,10 @@ export class TranscriptionService extends React.Component {
 
   // On instance destruction, close the socket connection
   componentWillUnmount() {
-    console.log('WebSocket connection closed.')
+    this.closeConnection()
+  }
+
+  public closeConnection() {
     // Close the WebSocket connection
     this.socket.close()
   }
