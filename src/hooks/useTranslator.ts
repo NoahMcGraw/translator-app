@@ -16,10 +16,12 @@ const useTranslator = () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     const recorder = new RecordRTC(stream, {
       type: 'audio',
-      mimeType: 'audio/wav',
-      recorderType: RecordRTC.StereoAudioRecorder,
-      sampleRate: 44100,
-      numberOfAudioChannels: 2,
+      // mimeType: 'audio/wav',
+      mimeType: 'audio/webm',
+      // recorderType: RecordRTC.StereoAudioRecorder,
+      sampleRate: 48000,
+      // numberOfAudioChannels: 2,
+      numberOfAudioChannels: 1,
       timeSlice: 1000,
       ondataavailable(blob) {
         try {
@@ -27,8 +29,8 @@ const useTranslator = () => {
             console.log(res)
             // Iterate through the res and create a Transcription object for each
             //TODO: DO THIS
-            transcriptions?.push(res)
-            setTranscription(transcriptions)
+            // transcriptions?.push(res)
+            // setTranscription(transcriptions)
             setError(null)
           })
         } catch (err: any) {

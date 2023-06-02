@@ -22,8 +22,14 @@
 environment.prod.ts
 environment.ts
 .vscode
-/api/gcloudServiceCred.json
-
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# api
+/api/.env
+/api/.env.local
+/api/.env.development.local
+/api/.env.test.local
+/api/.env.production.local
+/api/gcloudServiceCred.json
