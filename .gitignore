@@ -33,3 +33,6 @@ yarn-error.log*
 /api/.env.test.local
 /api/.env.production.local
 /api/gcloudServiceCred.json
+
+# GPT Training
+/gpt

@@ -154,6 +154,7 @@ const sendAudioChunk = async (audioChunk) => {
           // console.log('Data:', res)
           if (res.results.length > 0) {
             const result = res.results[0]
+            // console.log('Result:', result)
             // Grab the transcript and wordsInfo from the result
             let transcript = result.alternatives[0].transcript
             const wordsInfo = result.alternatives[0].words
@@ -165,8 +166,8 @@ const sendAudioChunk = async (audioChunk) => {
             // tags, you only have to take the words list from the last result:
             // wordsInfo.forEach((a) => console.log(` word: ${a.word}, speakerTag: ${a.speakerTag}`))
 
-            // If isFinal=true, then generate the final transcript and send it to the completions api
-            if (result.isFinal) {
+            // If isFinal=true and there is new data to submit, then generate the final transcript and send it to the completions api
+            if (result.isFinal && wordsInfo.length > 0) {
               // Generate the final transcript
               const finalTranscript = createTranscript(wordsInfo)
               console.log('Final Transcription:', finalTranscript)
@@ -260,7 +261,7 @@ const getCompletions = async (transcript) => {
     }
     const responseObj = await openai.createCompletion({
       model: 'text-davinci-003',
-      prompt: completionsContext + transcript + '\n[Generated Opts]',
+      prompt: completionsContext + transcript + '[Generated Opts]',
       temperature: 0.5,
       max_tokens: 60,
       top_p: 1,
@@ -268,9 +269,9 @@ const getCompletions = async (transcript) => {
       presence_penalty: 0,
       stop: ['[Speaker 1]', '[Speaker 2]', '[Generated Opts]'],
     })
-    console.log('Response:', responseObj)
+    // console.log('Response:', responseObj)
     const completions = responseObj.data.choices[0].text
-    console.log('Completions:', completions)
+    // console.log('Completions:', completions)
     // if overwriteContext is true, then overwrite the context with the actual conversation history
     if (overwriteContext) {
       completionsContext = transcript + '\n[Generated Opts]' + completions
