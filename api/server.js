@@ -6,7 +6,9 @@ import dotenv from 'dotenv'
 // import { SpeechClient } from '@google-cloud/speech/build/src/v1p1beta1/speech_client.js'
 import { SpeechClient } from '@google-cloud/speech'
 import { Configuration, OpenAIApi } from 'openai'
-import { parseCompletions } from './utils.js'
+import { isWithinTokenLimit } from 'gpt-tokenizer/model/text-davinci-003'
+import { trimPrompt, parseCompletions } from './openAI/functions.js'
+// import { request } from 'http'
 
 // Load environment variables from .env file
 dotenv.config()
@@ -26,7 +28,7 @@ let isFirstAudioChunk = true
 let headerChunk = null
 let requiresHeaderChunk = false
 const hardStreamingLimit = 290000 // ~5 minutes in milliseconds. This limit is set by the speech api. If the connection is open for longer than this, it will close.
-const streamingLimit = 10000 // 2 minutes in milliseconds. This is the limit we set to restart the connection before the speech api closes it.
+const streamingLimit = 30000 // 2 minutes in milliseconds. This is the limit we set to restart the connection before the speech api closes it.
 
 let newStream = true
 
@@ -36,7 +38,20 @@ let restartTimeoutId = null
 // Generate a unique ID for this WebSocket connection
 let requestId = uuidv4()
 
+// The endpoint that will be called on the websocket message that contains a payload
+let nextEndpointToCall = null
+
+// Name of the file that will be used to store the user config audio
+const userConfigAudioFile = 'temp/userConfigAudio.webm'
+
+// OpenAI API configuration
 let openai = null
+
+// Hard token limit for OpenAI API under text-davinci-003 model
+const openaiHardTokenLimit = 4000
+
+// Soft token limit for OpenAI API under text-davinci-003 model
+const openaiSoftTokenLimit = 3000
 
 // Audio buffer array containing the audio chunks sent during the current connection period with the speech api
 let audioInput = []
@@ -58,33 +73,110 @@ wss.on('connection', (ws) => {
   console.log('WebSocket connection established.')
 
   //Send the unique ID to the client so it can be used to match responses to requests
-  ws.send(JSON.stringify({ status: 201, nextRequestId: requestId, requestId: undefined }))
+  respondToClient(ws, 201, undefined)
 
-  ws.on('message', (message) => {
-    // console.log('Received message from client:', message)
-
-    try {
-      const audioBlob = message
-
-      //If this is the first audio chunk, store it as the header chunk (This is a crude way of handling the header chunk. It will need to be improved.)
-      //TODO: Improve handling of header chunk
-      if (isFirstAudioChunk) {
-        headerChunk = audioBlob
-        isFirstAudioChunk = false
+  ws.on('message', (message, isBinary) => {
+    message = isBinary ? message : message.toString()
+    // If message is a json object, parse it
+    console.log('Message received from client:', message)
+    console.log('typeof message:', typeof message)
+    if (typeof message === 'string') {
+      try {
+        const messageObj = JSON.parse(message)
+        // If the message is a json object, it should have a requestId property
+        // if (!messageObj.requestId) {
+        //   throw new Error('Message does not contain a requestId property')
+        // }
+        // const messageRequestId = messageObj.requestId
+        // If the message requestId does not match the current requestId, throw an error
+        // if (messageRequestId !== requestId) {
+        //   throw new Error('Message requestId does not match the current requestId')
+        // }
+        const action = messageObj.action
+        switch (action) {
+          // If the action is setEndpoint, set the next endpoint to call
+          case 'setEndpoint':
+            console.log('setting endpoint')
+            const endpoint = messageObj.data
+            if (!endpoint) {
+              throw new Error('Message is of action: ' + action + ' and does not contain an endpoint property')
+            }
+            switch (endpoint) {
+              case 'putUserConfigAudio':
+                console.log('setting endpoint to putUserConfigAudio')
+                nextEndpointToCall = 'putUserConfigAudio'
+                // Message the client to start sending audio
+                respondToClient(ws, 200, requestId, { nextEndpointToCall: nextEndpointToCall })
+                break
+              case 'streamRecognizeAudio':
+                console.log('setting endpoint to streamRecognizeAudio')
+                nextEndpointToCall = 'streamRecognizeAudio'
+                // Message the client to start sending audio
+                respondToClient(ws, 200, requestId, { nextEndpointToCall: nextEndpointToCall })
+                break
+              default:
+                throw new Error('Message is of action: ' + action + ' and contains an invalid endpoint property')
+            }
+            break
+          default:
+            throw new Error('Message is of invalid action: ' + action)
+        }
+      } catch (error) {
+        console.log('Error parsing JSON message:', error.message)
+        respondToClient(ws, 400, requestId, { error: 'Error parsing JSON message: ' + error.message })
+        return
       }
+      // console.log('Received message from client:', message)
+    }
+    // else if message is a blob, process it
+    else if (message instanceof Buffer) {
+      try {
+        // If the endpoint is not set, throw an error
+        if (!nextEndpointToCall) {
+          throw new Error('nextEndpointToCall is not set')
+        }
+        const audioBlob = message
 
-      // console log the endpoint, requestId, and data
-      // console.log('Request ID:', requestId)
-      // console.log('Data:', audioBlob)
+        switch (nextEndpointToCall) {
+          case 'putUserConfigAudio':
+            // If this is the user config audio, we're going to save the audio to the temp folder and then prepend it to all of our session audio to prime the google speech api
+            try {
+              // if the user config audio file already exists, delete it
+              if (fs.existsSync(userConfigAudioFile)) {
+                deleteFile(userConfigAudioFile)
+              }
+              writeBufferToFile(userConfigAudioFile, audioBlob)
+              // Reset the endpoint to call
+              resetEndpoint()
+              respondToClient(ws, 200, requestId)
+            } catch (error) {
+              console.log('Error writing user config audio to file:', error.message)
+              throw new Error('Error writing user config audio to file: ' + error.message)
+            }
+            break
+          case 'streamRecognizeAudio':
+            //If this is the first audio chunk, store it as the header chunk (This is a crude way of handling the header chunk. It will need to be improved.)
+            //TODO: Improve handling of header chunk
+            if (isFirstAudioChunk) {
+              headerChunk = audioBlob
+              isFirstAudioChunk = false
+            }
 
-      // Process the data payload
-      sendAudioChunk(audioBlob)
-    } catch (error) {
-      // Handle JSON parsing error or other processing errors
-      console.log('Error processing message:', error.message)
-      ws.send(
-        JSON.stringify({ status: 400, requestId: requestId, error: 'Error processing message: ' + error.message })
-      )
+            // console log the endpoint, requestId, and data
+            // console.log('Request ID:', requestId)
+            // console.log('Data:', audioBlob)
+
+            // Process the data payload
+            sendAudioChunk(audioBlob)
+            break
+          default:
+            throw new Error('nextEndpointToCall is invalid')
+        }
+      } catch (error) {
+        // Handle JSON parsing error or other processing errors
+        console.log('Error processing message:', error.message)
+        respondToClient(ws, 400, requestId, { error: 'Error processing message: ' + error.message })
+      }
     }
   })
 
@@ -92,9 +184,29 @@ wss.on('connection', (ws) => {
     console.log('WebSocket connection closed.')
     // Close the connection with the speech API
     closeSTTConnection()
+    // Reset the endpoint to call
+    resetEndpoint()
+    // Delete the user config audio file
+    if (fs.existsSync(userConfigAudioFile)) {
+      deleteFile(userConfigAudioFile)
+    }
     if (restartTimeoutId) clearTimeout(restartTimeoutId)
   })
 })
+
+/* Helper function to pass responses to the client and track the socket state
+ * @param {WebSocket} ws - The websocket connection
+ * @param {number} status - The status code to send to the client
+ * @param {number} requestId - The requestId to send to the client
+ * @param {object} misc - Any other properties to send to the client
+ * @returns {void}
+ * */
+const respondToClient = (ws, status, _requestId, misc) => {
+  // Generate a nextRequestId
+  const nextRequestId = uuidv4()
+  ws.send(JSON.stringify({ status: status, requestId: _requestId, nextRequestId: nextRequestId, ...misc }))
+  requestId = nextRequestId
+}
 
 const sendAudioChunk = async (audioChunk) => {
   try {
@@ -107,16 +219,16 @@ const sendAudioChunk = async (audioChunk) => {
     if (newStream && lastAudioInput.length !== 0) {
       // If requiresHeaderChunk is true, prepend the header chunk to the lastAudioInput array
       if (requiresHeaderChunk) {
-        console.log('Prepending header chunk')
+        // console.log('Prepending header chunk')
         lastAudioInput.unshift(headerChunk)
       }
       // Otherwise, this must be the first restart, so the header chunk is already in the lastAudioInput array
       else {
         requiresHeaderChunk = true
       }
-      console.log('lastAudioInput.length !== 0', lastAudioInput.length)
+      //console.log('lastAudioInput.length !== 0', lastAudioInput.length)
       for (let i = 0; i < lastAudioInput.length; i++) {
-        console.log('Pushing leftover chunk')
+        //console.log('Pushing leftover chunk')
         recognizeStream.write(lastAudioInput[i])
         // Write the audio chunk to the audio file
         writeBufferToFile('bufferSamp.webm', lastAudioInput[i])
@@ -124,12 +236,11 @@ const sendAudioChunk = async (audioChunk) => {
       newStream = false
     }
     // Store the audio chunk in the audioInput array
-    const audioInputLength = audioInput.push(audioChunk)
-    console.log('audioInputLength:', audioInputLength)
+    audioInput.push(audioChunk)
 
     if (recognizeStream) {
       // Write the audio chunk to the streaming request
-      console.log('Pushing new chunk')
+      //console.log('Pushing new chunk')
       recognizeStream.write(audioChunk)
     }
 
@@ -182,25 +293,18 @@ const createRecognizeStream = async () => {
       console.error('Error:', error)
       // return a message to the client indicating an error
       wss.clients.forEach((client) => {
-        client.send(
-          JSON.stringify({
-            status: 500,
-            requestId: requestId,
-            nextRequestId: null,
-            error: 'Error contacting services, message: ' + error.message,
-          })
-        )
+        respondToClient(client, 500, requestId, { error: 'Error contacting services, message: ' + error.message })
       })
     })
     .on('data', speechCallback)
 }
 
-const speechCallback = (res) => {
+const speechCallback = async (res) => {
   // console.log('Data:', res)
-  console.log('Received data from speech api.')
+  //console.log('Received data from speech api.')
   if (res.results.length > 0) {
     const result = res.results[0]
-    console.log('resultEndTime: ', result.resultEndTime)
+    //console.log('resultEndTime: ', result.resultEndTime)
     // Convert API result end time from seconds + nanoseconds to milliseconds
     // resultEndTime = result.resultEndTime.seconds * 1000 + Math.round(result.resultEndTime.nanos / 1000000)
     // console.log('Result:', result)
@@ -226,7 +330,7 @@ const speechCallback = (res) => {
         // Override the transcript with the final transcript
         transcript = finalTranscript
         // Get the completions
-        // completions = await getCompletions(finalTranscript)
+        completions = await getCompletions(finalTranscript)
         console.log('Completions:', completions)
       }
       const data = {
@@ -234,10 +338,8 @@ const speechCallback = (res) => {
         transcript: transcript,
         completions: completions,
       }
-      // Generate a new unique ID for the next request
-      const nextRequestId = uuidv4()
-      wss.clients.forEach((client) => {
-        client.send(JSON.stringify({ status: 200, requestId: requestId, nextRequestId: nextRequestId, data: data }))
+      wss.clients.forEach((ws) => {
+        respondToClient(ws, 200, requestId, { data: data })
       })
     }
   }
@@ -271,11 +373,11 @@ const closeSpeechClient = () => {
 }
 
 // Helper function for restarting the stream every streamingLimit milliseconds
-function restartRecognizeStream() {
-  console.log('Restarting recognize stream.')
+const restartRecognizeStream = () => {
+  //console.log('Restarting recognize stream.')
   closeRecognizeStream()
 
-  console.log('audioInput.length: ', audioInput.length)
+  //console.log('audioInput.length: ', audioInput.length)
   lastAudioInput = []
   lastAudioInput = audioInput
   audioInput = []
@@ -296,7 +398,7 @@ const createTranscript = (words) => {
     const word = words[i]
     // If the word is undefined, then break out of the loop
     if (typeof word === 'undefined') {
-      console.log('Undefined word:', word)
+      //console.log('Undefined word:', word)
       break
     }
     // If the speakerTag is the same as the currentSpeaker, then add the word to the currentWord
@@ -326,8 +428,6 @@ const getCompletions = async (transcript) => {
     openai = new OpenAIApi(configuration)
   }
 
-  // If there is no context yet, then we need to grab the example context from completionsContext.json and then overwrite it with actual conversation history later
-  // let overwriteContext = false
   let response = []
 
   try {
@@ -341,12 +441,23 @@ const getCompletions = async (transcript) => {
         throw new Error('Error parsing completionsContextJSON')
       }
     }
+
+    // Create the prompt
+    let prompt =
+      completionsContext +
+      transcript +
+      '[Continue the conversation as SPEAKER 1 and write a list of the 3 most important and salient questions SPEAKER 1 would ask next and return them in an array]'
+
+    //check if prompt exceeds out max soft token limit
+    if (!isWithinTokenLimit(prompt, openaiSoftTokenLimit)) {
+      console.log('Prompt exceeds soft token limit, trimming prompt')
+      prompt = trimPrompt(prompt, openaiSoftTokenLimit)
+      console.log('Trimmed prompt:', prompt)
+    }
+
     const responseObj = await openai.createCompletion({
       model: 'text-davinci-003',
-      prompt:
-        completionsContext +
-        transcript +
-        '[Continue the conversation as SPEAKER 1 and write a list of the 3 most important and salient questions SPEAKER 1 would ask next and return them in an array]',
+      prompt: prompt,
       temperature: 0.5,
       max_tokens: 60,
       top_p: 1,
@@ -354,9 +465,9 @@ const getCompletions = async (transcript) => {
       presence_penalty: 0,
       stop: ['[SPEAKER 1]', '[SPEAKER 2]', '4.'],
     })
-    console.log('Response:', responseObj)
+    //console.log('Response:', responseObj)
     const completionsStr = responseObj.data.choices[0].text
-    console.log('Completions:', completionsStr)
+    //console.log('Completions:', completionsStr)
     // Add the transcript to the completions context
     completionsContext += transcript
     // Parse the completions string into an array and trim out any non-standard characters
@@ -385,4 +496,20 @@ const writeBufferToFile = (fileName, buffer) => {
     }
     //file written successfully
   })
+}
+
+// Helper function to delete a file
+const deleteFile = (fileName) => {
+  fs.unlink(fileName, (err) => {
+    if (err) {
+      console.error(err)
+      return
+    }
+    //file removed successfully
+  })
+}
+
+//Helper to reset state of the nextEndpointToCall
+const resetEndpoint = () => {
+  nextEndpointToCall = null
 }

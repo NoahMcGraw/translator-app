@@ -1,3 +1,4 @@
+// import { request } from 'http'
 import React from 'react'
 import environment from '../environment'
 import { waitForVariable } from '../utils'
@@ -9,7 +10,13 @@ type GetTranscriptionArgs = {
 export class TranscriptionService extends React.Component {
   private socket: WebSocket
 
-  private nextRequestId: number | undefined = undefined
+  private socketState: {
+    nextEndpointToCall: string | undefined
+    nextRequestId: number | undefined
+  }
+
+  // Store callbacks and promises associated with requests
+  private requestCallbacks: { [requestId: string]: { resolve: Function; reject: Function } } = {}
 
   // On instance creation, initialize the socket connection
   constructor(props: any) {
@@ -18,6 +25,11 @@ export class TranscriptionService extends React.Component {
 
     // Create a new WebSocket connection
     this.socket = new WebSocket(environment.API_WS_URL ? environment.API_WS_URL : 'ws://localhost:3003')
+
+    this.socketState = {
+      nextEndpointToCall: undefined,
+      nextRequestId: undefined,
+    }
 
     // Event listener for connection open
     this.socket.addEventListener('open', () => {
@@ -28,21 +40,37 @@ export class TranscriptionService extends React.Component {
     this.socket.onmessage = (event: MessageEvent) => {
       // console.log('Received message from server:', event.data)
       const response = JSON.parse(event.data)
-      const { requestId, nextRequestId } = response
+      const { requestId, nextRequestId, nextEndpointToCall } = response
 
       // Update the nextRequestId, this will be sent with every request including a response from the api on successful connection
       if (nextRequestId) {
-        this.nextRequestId = nextRequestId
+        this.socketState.nextRequestId = nextRequestId
       }
+
+      // Update the nextEndpointToCall, This can be expected in the response to a setEndpoint request but may be sent by the api at any time
+      if (nextEndpointToCall) {
+        // console.log('Setting next endpoint to call: ', nextEndpointToCall)
+        this.socketState.nextEndpointToCall = nextEndpointToCall
+      }
+
       // Look up the callback or promise associated with the requestId. This will only not be found if the server is responding to the connection being established.
-      if (requestId) {
-        const callback = this.requestCallbacks[requestId]
-        if (callback) {
-          // console.log('Found callback for request id: ', requestId)
-          // Invoke the callback or resolve the promise with the response data
-          callback.resolve(response)
-          delete this.requestCallbacks[requestId]
+      console.log('requestId returned by server:', requestId)
+      console.log('requestCallbacks:', this.requestCallbacks[requestId])
+      if (requestId && this.requestCallbacks[requestId] !== null) {
+        console.log('requestId and requestCallback set. Promise:', this.requestCallbacks[requestId])
+        const requestCallback = this.requestCallbacks[requestId]
+
+        // console.log if the requestCallback is already resolved
+
+        // Handle the response data
+        if (response.error) {
+          requestCallback.reject(new Error(response.error))
+        } else {
+          console.log('Resolving requestCallback with response.data:', response)
+          requestCallback.resolve(response)
         }
+
+        delete this.requestCallbacks[requestId]
       }
     }
 
@@ -60,10 +88,16 @@ export class TranscriptionService extends React.Component {
   public closeConnection() {
     // Close the WebSocket connection
     this.socket.close()
+    // Reset the socket state
+    this.resetSocketState()
   }
 
-  // Store callbacks and promises associated with requests
-  private requestCallbacks: { [requestId: string]: { resolve: Function; reject: Function } } = {}
+  private resetSocketState() {
+    this.socketState = {
+      nextEndpointToCall: undefined,
+      nextRequestId: undefined,
+    }
+  }
 
   // Helper function to wait for the socket to be open
   private async waitForConnection(maxTimeOut: number = 100): Promise<any> {
@@ -82,47 +116,45 @@ export class TranscriptionService extends React.Component {
     })
   }
 
-  // Create a promise that will be resolved with the response data
+  // Create a promise that will be resolved with the next request ID
   private createRequestPromise(): Promise<any> {
-    // Store the callback or promise associated with the request
-    return new Promise<any>(async (resolve, reject) => {
-      console.log('Creating request promise')
-      // Wait for the socket to be open
+    return new Promise<any>(async (outerResolve, outerReject) => {
       await this.waitForConnection()
-      // if nextRequestId is undefined, wait for it to resolve
-      await waitForVariable(this.nextRequestId)
+      await waitForVariable(this.socketState.nextRequestId)
 
-      // Store the callback or promise associated with the request
-      if (this.nextRequestId) {
-        console.log('Creating request promise for request id: ', this.nextRequestId)
-        resolve((this.requestCallbacks[this.nextRequestId] = { resolve, reject }))
+      if (this.socketState.nextRequestId) {
+        const requestId = this.socketState.nextRequestId
+        console.log('Creating request promise with request ID:', requestId)
+        const innerPromise = new Promise((innerResolve, innerReject) => {
+          this.requestCallbacks[requestId] = {
+            resolve: innerResolve,
+            reject: innerReject,
+          }
+        })
+
+        outerResolve({ requestPromise: innerPromise }) // Resolve with the new promise
       } else {
-        reject('No next request id')
+        outerReject('No next request id')
       }
     })
   }
 
-  // Send a request to the server and return a promise that will be resolved with the response data
-  private sendRequest(request: any): Promise<any> {
-    // Create a promise that will be resolved with the response data
-    return new Promise<any>((resolve, reject) => {
-      // If the socket is open, send the request message
+  private async sendRequest(request: any): Promise<any> {
+    return new Promise((resolve, reject) => {
       this.createRequestPromise()
-        .then(() => {
-          console.log('Sending request: ', request)
+        .then((createResponse) => {
+          // const { requestPromise } = createResponse
+          // console.log('requestPromise', requestPromise)
           this.socket.send(request)
-          // Resolve the promise with the response data
-          if (this.nextRequestId) {
-            this.requestCallbacks[this.nextRequestId] = { resolve, reject }
-          } else {
-            reject('No next request id')
-          }
+          resolve(createResponse)
         })
         .catch((error: any) => {
-          reject(new Error(error))
+          reject(error)
         })
     })
   }
+
+  private counter = 0
   // Get the transcriptions for the given audio file
   public async getTranscription(args: GetTranscriptionArgs): Promise<string> {
     // Check that formData has the correct keys
@@ -130,31 +162,100 @@ export class TranscriptionService extends React.Component {
       throw new Error('Invalid form data')
     }
 
-    // Set the audioBlob as the request
-    const request = args.audio
+    const audio = args.audio
 
     // Send the request to the server
-    return new Promise<string>((resolve, reject) => {
-      this.sendRequest(request)
-        .then((response: any) => {
-          // Handle the response data
-          console.log('Response: ', response)
-          const { status, data } = response
-          console.log('Status: ', status)
-          console.log('Data: ', data)
-          if (status === 200 && data) {
+    return new Promise<any>(async (resolve, reject) => {
+      const locCounter = this.counter++
+      // Send a message to the server that our next request will be a transcription request
+      if (this.socketState.nextEndpointToCall !== 'streamRecognizeAudio') {
+        this.setEndpoint('streamRecognizeAudio')
+          .then(() => {
+            // Send the request to the server
+            // console.log('Sending request to streamRecognizeAudio')
+            console.log('callback from setEndpoint', locCounter)
+            this.doGetCompletions(audio)
+              .then((data) => {
+                resolve(data)
+              })
+              .catch((error) => {
+                throw new Error(error)
+              })
+          })
+          .catch((error: any) => {
+            reject(new Error(error))
+          })
+      } else {
+        // Send the request to the server
+        // console.log('Sending request to streamRecognizeAudio')
+        console.log('skipped setEndpoint', locCounter)
+        this.doGetCompletions(audio)
+          .then((data) => {
             resolve(data)
-          } else {
-            // Handle errors
-            reject(
-              new Error(
-                'Server status: ' +
-                  response.status +
-                  '\n Error getting transcriptions: ' +
-                  (response.error ? response.error : 'Unspecified error')
-              )
-            )
-          }
+          })
+          .catch((error) => {
+            throw new Error(error)
+          })
+      }
+    })
+  }
+
+  // Set the endpoint to call for the next request
+  private setEndpoint(endpoint: string): Promise<true | Error> {
+    // Send the request to the server
+    return new Promise<true | Error>((resolve, reject) => {
+      this.sendRequest(JSON.stringify({ action: 'setEndpoint', data: endpoint }))
+        .then((sendResponse: { requestPromise: Promise<any> }) => {
+          const { requestPromise } = sendResponse
+          requestPromise
+            .then((response: any) => {
+              console.log('response from setEndpoint', response)
+              // Handle the response data
+              const { status, nextEndpointToCall } = response
+              if (status === 200 && nextEndpointToCall === endpoint) {
+                resolve(true)
+                // Check if the response contains the correct endpoint value
+              } else {
+                reject(new Error('Endpoint not set correctly'))
+              }
+            })
+            .catch((error: any) => {
+              // Handle errors
+              reject(new Error(error))
+            })
+        })
+        .catch((error: any) => {
+          // Handle errors
+          reject(new Error(error))
+        })
+    })
+  }
+
+  private async doGetCompletions(audio: Blob): Promise<any> {
+    // Set the audioBlob as the request
+    const request = audio
+
+    // Send the request to the server
+    return new Promise((resolve, reject) => {
+      this.sendRequest(request)
+        .then((sendResponse: { requestPromise: Promise<any> }) => {
+          const { requestPromise } = sendResponse
+          requestPromise
+            .then((response: any) => {
+              console.log('response from doGetCompletions', response)
+              // Handle the response data
+              const { status, data } = response
+              if (status === 200 && data) {
+                resolve(data)
+                // Check if the response contains the correct endpoint value
+              } else {
+                reject(new Error('Endpoint not set correctly'))
+              }
+            })
+            .catch((error: any) => {
+              // Handle errors
+              reject(new Error(error))
+            })
         })
         .catch((error: any) => {
           // Handle errors
