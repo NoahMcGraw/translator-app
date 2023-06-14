@@ -1,4 +1,5 @@
 // Desc: Utility functions for the API
+import fs from 'fs'
 
 // Helper function to trim the completions string by brackets
 export const trimByBrackets = (completionsStr) => {
@@ -85,4 +86,27 @@ export const splitByNumberedList = (completions) => {
   // Remove the first item since we don't care what comes before the first number
   splitRes.slice(1)
   return splitRes
+}
+
+// Helper function to write buffer to file
+export const writeBufferToFile = (fileName, buffer) => {
+  // If the file already exists, then add to it. This function will create the file for us if it doesn't exist.
+  fs.appendFile(fileName, buffer, (err) => {
+    if (err) {
+      console.error(err)
+      return
+    }
+    //file written successfully
+  })
+}
+
+// Helper function to delete a file
+export const deleteFile = (fileName) => {
+  fs.unlink(fileName, (err) => {
+    if (err) {
+      console.error(err)
+      return
+    }
+    //file removed successfully
+  })
 }

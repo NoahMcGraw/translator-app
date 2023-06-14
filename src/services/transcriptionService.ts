@@ -18,6 +18,9 @@ export class TranscriptionService extends React.Component {
   // Store callbacks and promises associated with requests
   private requestCallbacks: { [requestId: string]: { resolve: Function; reject: Function } } = {}
 
+  // Queue of requests to be sent to the server
+  private serverRequestQueue: any[] = []
+
   // On instance creation, initialize the socket connection
   constructor(props: any) {
     // Call the React.Component constructor() method
@@ -56,7 +59,7 @@ export class TranscriptionService extends React.Component {
       // Look up the callback or promise associated with the requestId. This will only not be found if the server is responding to the connection being established.
       console.log('requestId returned by server:', requestId)
       console.log('requestCallbacks:', this.requestCallbacks[requestId])
-      if (requestId && this.requestCallbacks[requestId] !== null) {
+      if (requestId && this.requestCallbacks[requestId] !== undefined) {
         console.log('requestId and requestCallback set. Promise:', this.requestCallbacks[requestId])
         const requestCallback = this.requestCallbacks[requestId]
 
@@ -120,7 +123,7 @@ export class TranscriptionService extends React.Component {
   private createRequestPromise(): Promise<any> {
     return new Promise<any>(async (outerResolve, outerReject) => {
       await this.waitForConnection()
-      await waitForVariable(this.socketState.nextRequestId)
+      await waitForVariable(this.socketState.nextRequestId, 50)
 
       if (this.socketState.nextRequestId) {
         const requestId = this.socketState.nextRequestId
@@ -139,13 +142,23 @@ export class TranscriptionService extends React.Component {
     })
   }
 
+  /**
+   * Send a request to the server and return a promise that will be resolved with the response from the server. If the socket is not open or the nextRequestId hasn't been returned yet, the request will be queued and sent when the socket is open.
+   * @param request The request object
+   * @returns A promise that will be resolved with the response from the server
+   */
   private async sendRequest(request: any): Promise<any> {
+    // Push the request obj to the serverRequestQueue
+    // this.serverRequestQueue.push(request)
     return new Promise((resolve, reject) => {
       this.createRequestPromise()
         .then((createResponse) => {
-          // const { requestPromise } = createResponse
-          // console.log('requestPromise', requestPromise)
+          // Pull the first request from the serverRequestQueue
+          // const queuedRequest = this.serverRequestQueue.shift()
+          // Send the request to the server
           this.socket.send(request)
+          // Set nextRequestId to undefined
+          // this.socketState.nextRequestId = undefined
           resolve(createResponse)
         })
         .catch((error: any) => {
@@ -244,12 +257,14 @@ export class TranscriptionService extends React.Component {
             .then((response: any) => {
               console.log('response from doGetCompletions', response)
               // Handle the response data
-              const { status, data } = response
-              if (status === 200 && data) {
+              const { status, error } = response
+              let { data } = response
+              if (status === 200) {
+                data = data ? data : 'pending'
                 resolve(data)
                 // Check if the response contains the correct endpoint value
               } else {
-                reject(new Error('Endpoint not set correctly'))
+                reject(new Error('Error Status: ' + status + ' Error: ' + error))
               }
             })
             .catch((error: any) => {
