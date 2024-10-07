@@ -19,7 +19,7 @@
     "express": "^4.18.2",
     "fs": "^0.0.1-security",
     "gpt-tokenizer": "^2.1.1",
-    "openai": "^3.2.1",
+    "openai": "^4.67.2",
     "uuid": "^9.0.0",
     "ws": "^8.13.0"
   }

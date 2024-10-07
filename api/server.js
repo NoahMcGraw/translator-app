@@ -44,8 +44,8 @@ wss.on('connection', (ws) => {
   const respondToClient = (status, misc) => {
     // Generate a nextRequestId
     const nextRequestId = uuidv4()
-    console.log('Sending back requestId: ', requestId)
-    console.log('Sending back nextRequestId: ', nextRequestId)
+    // console.log('Sending back requestId: ', requestId)
+    // console.log('Sending back nextRequestId: ', nextRequestId)
     ws.send(JSON.stringify({ status: status, requestId: requestId, nextRequestId: nextRequestId, ...misc }))
     requestId = nextRequestId
   }
@@ -61,7 +61,7 @@ wss.on('connection', (ws) => {
 
   ws.on('message', async (message, isBinary) => {
     message = isBinary ? message : message.toString()
-    console.log('Message received from client')
+    // console.log('Message received from client')
     if (typeof message === 'string') {
       try {
         const messageObj = JSON.parse(message)
@@ -103,7 +103,7 @@ wss.on('connection', (ws) => {
             throw new Error('Message is of invalid action: ' + action)
         }
       } catch (error) {
-        console.log('Error parsing JSON message:', error.message)
+        // console.log('Error parsing JSON message:', error.message)
         respondToClient(400, { error: 'Error parsing JSON message: ' + error.message })
         return
       }
@@ -128,7 +128,7 @@ wss.on('connection', (ws) => {
               // Message the client to start sending audio
               respondToClient(200)
             } catch (error) {
-              console.log('Error writing user config audio to file:', error.message)
+              // console.log('Error writing user config audio to file:', error.message)
               throw new Error('Error writing user config audio to file: ' + error.message)
             }
             break
@@ -139,9 +139,7 @@ wss.on('connection', (ws) => {
                 // If the recognizeStream is not set, create a new one
                 gCloudSTTService.createRecognizeStream()
               }
-              // console.log('recognizeStream', recognizeStream)
-              // console.log('recognizeStream.listenerCount("error")', recognizeStream.listenerCount('error'))
-              // console.log('recognizeStream.listenerCount("data")', recognizeStream.listenerCount('data'))
+              console.log('recognizeStream.listenerCount', recognizeStream.listenerCount)
               if (!recognizeStream.listenerCount('error')) {
                 recognizeStream.on('error', (error) => {
                   console.error('Error:', error)
@@ -206,7 +204,7 @@ wss.on('connection', (ws) => {
         // TODO: write logic where if our current transcript is the same as the previous transcript, then don't send it to the completions api. For some reason the speech api is sending duplicate transcripts marked as final.
         // Generate the final transcript
         const finalTranscript = gCloudSTTService.createTranscript(wordsInfo)
-        console.log('Final Transcription:', finalTranscript)
+        // console.log('Final Transcription:', finalTranscript)
         // Override the transcript with the final transcript
         if (finalTranscript !== undefined && finalTranscript.length > 0) {
           data.transcript = finalTranscript

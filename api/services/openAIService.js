@@ -10,7 +10,7 @@ import {
 } from '../utils.js'
 import fs from 'fs'
 import { encode, decode, isWithinTokenLimit } from 'gpt-tokenizer/model/text-davinci-003'
-import { Configuration, OpenAIApi } from 'openai'
+import OpenAI from 'openai'
 
 /**
  * OpenAI service class.
@@ -33,11 +33,11 @@ class OpenAIService {
   #completionsContext = ''
 
   constructor() {
-    const configuration = new Configuration({
+    const configuration = {
       apiKey: process.env.OPENAI_API_KEY,
-    })
+    }
 
-    this.openai = new OpenAIApi(configuration)
+    this.openai = new OpenAI(configuration)
   }
 
   getCompletions = async (transcript) => {
@@ -45,15 +45,15 @@ class OpenAIService {
 
     try {
       // If there is no context yet, then grab the example context from completionsContext.json
-      if (this.#completionsContext === '') {
-        const completionsContextJSON = fs.readFileSync('completionsContext.json', 'utf8')
-        try {
-          this.#completionsContext = JSON.parse(completionsContextJSON).text
-        } catch (error) {
-          console.error('Error parsing completionsContextJSON:', error)
-          throw new Error('Error parsing completionsContextJSON')
-        }
-      }
+      // if (this.#completionsContext === '') {
+      //   const completionsContextJSON = fs.readFileSync('completionsContext.json', 'utf8')
+      //   try {
+      //     this.#completionsContext = JSON.parse(completionsContextJSON).text
+      //   } catch (error) {
+      //     console.error('Error parsing completionsContextJSON:', error)
+      //     throw new Error('Error parsing completionsContextJSON')
+      //   }
+      // }
 
       // Create the prompt
       let prompt =
@@ -68,21 +68,32 @@ class OpenAIService {
         console.log('Trimmed prompt:', prompt)
       }
 
-      const responseObj = await this.openai.createCompletion({
-        model: 'text-davinci-003',
-        prompt: prompt,
+      // const responseObj = await this.openai.chat.createCompletion({
+      //   model: 'gpt-4o-mini',
+      //   prompt: prompt,
+      //   temperature: 0.5,
+      //   max_tokens: 60,
+      //   top_p: 1,
+      //   frequency_penalty: 0.5,
+      //   presence_penalty: 0,
+      //   stop: ['[SPEAKER 1]', '[SPEAKER 2]', '4.'],
+      // })
+
+      const responseObj = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
         temperature: 0.5,
-        max_tokens: 60,
+        max_completion_tokens: 60,
         top_p: 1,
         frequency_penalty: 0.5,
         presence_penalty: 0,
         stop: ['[SPEAKER 1]', '[SPEAKER 2]', '4.'],
       })
-      //console.log('Response:', responseObj)
-      const completionsStr = responseObj.data.choices[0].text
-      //console.log('Completions:', completionsStr)
+      console.log('Response:', responseObj)
+      const completionsStr = responseObj.choices[0].message.content
+      console.log('Completions:', completionsStr)
       // Add the transcript to the completions context
-      this.completionsContext += transcript
+      this.#completionsContext += transcript
       // Parse the completions string into an array and trim out any non-standard characters
       try {
         response = this.#parseCompletions(completionsStr)

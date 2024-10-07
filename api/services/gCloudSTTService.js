@@ -1,7 +1,7 @@
 import { SpeechClient } from '@google-cloud/speech'
 // import { SpeechClient } from '@google-cloud/speech/build/src/v1p1beta1/speech_client.js'
 import fs from 'fs'
-import { deleteFile } from '../utils.js'
+import { deleteFile, writeBufferToFile } from '../utils.js'
 
 /**
  * GCloudSTT service class.
@@ -48,7 +48,7 @@ class GCloudSTTService {
     if (fs.existsSync(this.userConfigAudioFile)) {
       this.deleteFile(this.userConfigAudioFile)
     }
-    this.writeBufferToFile(this.userConfigAudioFile, audioBlob)
+    writeBufferToFile(this.userConfigAudioFile, audioBlob)
   }
 
   streamRecognizeAudio = async (audioBlob) => {
@@ -89,7 +89,7 @@ class GCloudSTTService {
           //console.log('Pushing leftover chunk')
           this.recognizeStream.write(this.#lastAudioInput[i])
           // Write the audio chunk to the audio file
-          this.writeBufferToFile('bufferSamp.webm', this.#lastAudioInput[i])
+          writeBufferToFile('bufferSamp.webm', this.#lastAudioInput[i])
         }
         this.#newStream = false
       }
