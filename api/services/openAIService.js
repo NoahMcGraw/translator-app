@@ -8,9 +8,10 @@ import {
   splitByNumberedList,
   splitBySingleQuotesAndCommas,
 } from '../utils.js'
-import fs from 'fs'
 import { encode, decode, isWithinTokenLimit } from 'gpt-tokenizer/model/text-davinci-003'
 import OpenAI from 'openai'
+import { zodResponseFormat } from 'openai/helpers/zod'
+import { z } from 'zod'
 
 /**
  * OpenAI service class.
@@ -59,7 +60,7 @@ class OpenAIService {
       let prompt =
         this.#completionsContext +
         transcript +
-        '[Continue the conversation as SPEAKER 1 and write a list of the 3 most important and salient questions SPEAKER 1 would ask next and return them in an array]'
+        '[Continue the conversation as SPEAKER 1 and write a list of the 3 most important and salient questions SPEAKER 1 would ask next and return them as a JSON string array.]'
 
       //check if prompt exceeds out max soft token limit
       if (!isWithinTokenLimit(prompt, this.openaiSoftTokenLimit)) {
@@ -79,6 +80,10 @@ class OpenAIService {
       //   stop: ['[SPEAKER 1]', '[SPEAKER 2]', '4.'],
       // })
 
+      const questionsEvent = z.object({
+        questions: z.array(z.string()),
+      })
+
       const responseObj = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
@@ -88,18 +93,24 @@ class OpenAIService {
         frequency_penalty: 0.5,
         presence_penalty: 0,
         stop: ['[SPEAKER 1]', '[SPEAKER 2]', '4.'],
+        response_format: zodResponseFormat(questionsEvent, 'questions'),
       })
       console.log('Response:', responseObj)
-      const completionsStr = responseObj.choices[0].message.content
-      console.log('Completions:', completionsStr)
+      try {
+        response = JSON.parse(responseObj.choices[0].message.content).questions
+      } catch (error) {
+        console.error('Error parsing response:', error)
+        throw new Error('Error parsing response')
+      }
+      console.log('completions:', response)
       // Add the transcript to the completions context
       this.#completionsContext += transcript
       // Parse the completions string into an array and trim out any non-standard characters
-      try {
-        response = this.#parseCompletions(completionsStr)
-      } catch (error) {
-        console.error('Error parsing completions:', error)
-      }
+      // try {
+      //   response = this.#parseCompletions(completionsStr)
+      // } catch (error) {
+      //   console.error('Error parsing completions:', error)
+      // }
 
       // console.log('Response:', response)
     } catch (error) {

@@ -204,7 +204,7 @@ wss.on('connection', (ws) => {
         // TODO: write logic where if our current transcript is the same as the previous transcript, then don't send it to the completions api. For some reason the speech api is sending duplicate transcripts marked as final.
         // Generate the final transcript
         const finalTranscript = gCloudSTTService.createTranscript(wordsInfo)
-        // console.log('Final Transcription:', finalTranscript)
+        console.log('Final Transcription:', finalTranscript)
         // Override the transcript with the final transcript
         if (finalTranscript !== undefined && finalTranscript.length > 0) {
           data.transcript = finalTranscript
